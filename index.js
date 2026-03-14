@@ -1,55 +1,168 @@
-const { default: makeWASocket, useMultiFileAuthState } = require("@whiskeysockets/baileys")
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require("@whiskeysockets/baileys")
 const qrcode = require("qrcode-terminal")
 const fs = require("fs")
+const path = require("path")
 
 const logger = require("./utils/logger")
 const eventHandler = require("./handlers/eventHandler")
 const antiCrash = require("./systems/antiCrash")
 
+/*
+====================
+START BOT
+====================
+*/
+
 async function start() {
 
- const { state, saveCreds } = await useMultiFileAuthState("./session")
+ try {
 
- const sock = makeWASocket({
-  auth: state,
-  logger: logger.child({ level: "silent" })
- })
+  const { state, saveCreds } = await useMultiFileAuthState("./session")
 
- sock.ev.on("creds.update", saveCreds)
+  const { version } = await fetchLatestBaileysVersion()
 
- eventHandler(sock)
+  const sock = makeWASocket({
 
- sock.ev.on("connection.update", ({ connection, qr }) => {
+   version,
 
-  if (qr) qrcode.generate(qr, { small: true })
+   auth: state,
 
-  if (connection === "open") {
-   logger.info("BOT CONNECTED")
-  }
+   logger: logger.child({ level: "silent" }),
 
- })
+   browser: ["Downloader", "Bot", "Production"],
+
+   markOnlineOnConnect: true,
+
+   syncFullHistory: false
+
+  })
+
+  /*
+  ====================
+  SAVE SESSION
+  ====================
+  */
+
+  sock.ev.on("creds.update", saveCreds)
+
+  /*
+  ====================
+  CONNECTION UPDATE
+  ====================
+  */
+
+  sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
+
+   if (qr) {
+    qrcode.generate(qr, { small: true })
+    logger.info("QR RECEIVED - Scan to login")
+   }
+
+   if (connection === "connecting") {
+    logger.info("Connecting to WhatsApp...")
+   }
+
+   if (connection === "open") {
+    logger.info("BOT CONNECTED")
+   }
+
+   if (connection === "close") {
+
+    const reason = lastDisconnect?.error?.output?.statusCode
+
+    logger.warn("Connection closed:", reason)
+
+    if (reason !== DisconnectReason.loggedOut) {
+
+     logger.info("Reconnecting in 5 seconds...")
+     setTimeout(start, 5000)
+
+    } else {
+
+     logger.error("Logged out. Scan QR again.")
+
+    }
+
+   }
+
+  })
+
+  /*
+  ====================
+  MESSAGE HANDLER
+  ====================
+  */
+
+  eventHandler(sock)
+
+ } catch (err) {
+
+  logger.error("START ERROR:", err)
+
+  setTimeout(start, 5000)
+
+ }
 
 }
 
-if (!fs.existsSync("./temp")) fs.mkdirSync("./temp")
+/*
+====================
+TEMP FOLDER
+====================
+*/
 
-antiCrash()
+if (!fs.existsSync("./temp")) {
+ fs.mkdirSync("./temp")
+}
+
+/*
+====================
+TEMP CLEANER
+====================
+*/
 
 setInterval(() => {
 
- const files = fs.readdirSync("./temp")
+ try {
 
- files.forEach(f => {
+  const files = fs.readdirSync("./temp")
 
-  const p = "./temp/" + f
-  const stat = fs.statSync(p)
+  files.forEach(file => {
 
-  if (Date.now() - stat.mtimeMs > 7200000) {
-   fs.unlinkSync(p)
-  }
+   const full = path.join("./temp", file)
 
- })
+   const stat = fs.statSync(full)
+
+   if (Date.now() - stat.mtimeMs > 7200000) {
+
+    fs.unlinkSync(full)
+
+    logger.info("Deleted temp:", file)
+
+   }
+
+  })
+
+ } catch (err) {
+
+  logger.error("Temp cleanup error:", err)
+
+ }
 
 }, 600000)
+
+/*
+====================
+ANTI CRASH
+====================
+*/
+
+if (antiCrash) antiCrash()
+
+/*
+====================
+RUN BOT
+====================
+*/
 
 start()
