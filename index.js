@@ -7,11 +7,7 @@ const logger = require("./utils/logger")
 const eventHandler = require("./handlers/eventHandler")
 const antiCrash = require("./systems/antiCrash")
 
-/*
-====================
-START BOT
-====================
-*/
+let sock
 
 async function start() {
 
@@ -21,7 +17,7 @@ async function start() {
 
   const { version } = await fetchLatestBaileysVersion()
 
-  const sock = makeWASocket({
+  sock = makeWASocket({
 
    version,
 
@@ -33,29 +29,22 @@ async function start() {
 
    markOnlineOnConnect: true,
 
-   syncFullHistory: false
+   syncFullHistory: false,
+
+   connectTimeoutMs: 60000
 
   })
 
-  /*
-  ====================
-  SAVE SESSION
-  ====================
-  */
-
   sock.ev.on("creds.update", saveCreds)
-
-  /*
-  ====================
-  CONNECTION UPDATE
-  ====================
-  */
 
   sock.ev.on("connection.update", ({ connection, lastDisconnect, qr }) => {
 
    if (qr) {
+
     qrcode.generate(qr, { small: true })
+
     logger.info("QR RECEIVED - Scan to login")
+
    }
 
    if (connection === "connecting") {
@@ -87,12 +76,6 @@ async function start() {
 
   })
 
-  /*
-  ====================
-  MESSAGE HANDLER
-  ====================
-  */
-
   eventHandler(sock)
 
  } catch (err) {
@@ -106,19 +89,19 @@ async function start() {
 }
 
 /*
-====================
-TEMP FOLDER
-====================
+TEMP & SESSION FOLDER
 */
 
 if (!fs.existsSync("./temp")) {
  fs.mkdirSync("./temp")
 }
 
+if (!fs.existsSync("./session")) {
+ fs.mkdirSync("./session")
+}
+
 /*
-====================
 TEMP CLEANER
-====================
 */
 
 setInterval(() => {
@@ -130,6 +113,8 @@ setInterval(() => {
   files.forEach(file => {
 
    const full = path.join("./temp", file)
+
+   if (!fs.existsSync(full)) return
 
    const stat = fs.statSync(full)
 
@@ -151,18 +136,6 @@ setInterval(() => {
 
 }, 600000)
 
-/*
-====================
-ANTI CRASH
-====================
-*/
-
 if (antiCrash) antiCrash()
-
-/*
-====================
-RUN BOT
-====================
-*/
 
 start()
