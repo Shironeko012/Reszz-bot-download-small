@@ -1,6 +1,7 @@
 {
   "name": "wa-downloader-bot",
-  "version": "1.2.0",
+  "version": "2.0.0",
+  "description": "Production WhatsApp Downloader Bot",
   "main": "index.js",
   "type": "commonjs",
   "scripts": {
@@ -8,9 +9,9 @@
     "postinstall": "apt-get update && apt-get install -y yt-dlp ffmpeg"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "^6.7.5",
+    "@whiskeysockets/baileys": "^6.7.8",
     "dotenv": "^16.4.5",
-    "pino": "^9.0.0",
+    "pino": "^9.1.0",
     "qrcode-terminal": "^0.12.0"
   }
 }
