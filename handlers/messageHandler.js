@@ -1,67 +1,117 @@
+/**
+ * Message Handler
+ * Process incoming messages and route actions
+ */
+
 const commandHandler = require("./commandHandler")
-const config = require("../config")
-const rateLimiter = require("../systems/rateLimiter")
+const autoDetect = require("../commands/autoDetect")
+const logger = require("../utils/logger")
 
-module.exports = async (sock, msg) => {
+/*
+Prevent duplicate message processing
+*/
+const processedMessages = new Map()
 
- try {
+const MESSAGE_CACHE_TTL = 30000
+const MAX_CACHE = 1000
 
-  if (!msg) return
-  if (!msg.message) return
+function extractText(message){
 
-  const type = Object.keys(msg.message)[0]
+return (
+message?.conversation ||
+message?.extendedTextMessage?.text ||
+message?.imageMessage?.caption ||
+message?.videoMessage?.caption ||
+message?.documentMessage?.caption ||
+message?.ephemeralMessage?.message?.extendedTextMessage?.text ||
+""
+)
 
-  if (!type) return
+}
 
-  // ignore broadcast
-  if (msg.key?.remoteJid === "status@broadcast") return
+function cleanupCache(){
 
-  // ignore system messages
-  if (type === "protocolMessage") return
-  if (type === "reactionMessage") return
-  if (type === "senderKeyDistributionMessage") return
+const now = Date.now()
 
-  // universal message text parser
-  const text =
-   msg.message.conversation ||
-   msg.message.extendedTextMessage?.text ||
-   msg.message.imageMessage?.caption ||
-   msg.message.videoMessage?.caption ||
-   msg.message.buttonsResponseMessage?.selectedButtonId ||
-   msg.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
-   msg.message.templateButtonReplyMessage?.selectedId ||
-   ""
+for(const [id,time] of processedMessages){
 
-  if (!text) return
+if(now - time > MESSAGE_CACHE_TTL){
+processedMessages.delete(id)
+}
 
-  const prefix = config.prefix
+}
 
-  if (!text.startsWith(prefix)) return
+if(processedMessages.size > MAX_CACHE){
 
-  const jid = msg.key?.participant || msg.key?.remoteJid
+const keys = [...processedMessages.keys()].slice(0,200)
 
-  if (!jid) return
+keys.forEach(k=>processedMessages.delete(k))
 
-  if (!rateLimiter(jid)) {
+}
 
-   return sock.sendMessage(msg.key.remoteJid, {
-    text: "Rate limit exceeded"
-   })
+}
 
-  }
+async function handle(sock,m){
 
-  const args = text.slice(prefix.length).trim().split(/\s+/)
+try{
 
-  const command = args.shift()?.toLowerCase()
+const message = m.message
+if(!message) return
 
-  if (!command) return
+/*
+ignore bot messages
+*/
+if(m.key?.fromMe) return
 
-  await commandHandler(sock, msg, command, args)
+const messageId = m.key?.id
 
- } catch (err) {
+/*
+Prevent duplicate execution
+*/
 
-  console.log("MessageHandler error:", err)
+if(messageId){
 
- }
+if(processedMessages.has(messageId)){
+return
+}
 
+processedMessages.set(messageId,Date.now())
+
+}
+
+cleanupCache()
+
+const text = extractText(message)
+
+if(!text) return
+
+console.log("📩 MESSAGE:", text)
+
+/*
+Try command first
+*/
+
+const isCommand =
+await commandHandler.handle(sock,m,text)
+
+if(isCommand) return
+
+/*
+If not command → run auto detect
+*/
+
+await autoDetect(sock,m,text)
+
+}catch(error){
+
+logger.error("MESSAGE_HANDLER_ERROR",{
+error:error?.message || error
+})
+
+}
+
+}
+
+module.exports={
+handle
 }
