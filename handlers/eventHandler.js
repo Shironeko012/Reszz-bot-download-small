@@ -4,11 +4,25 @@ module.exports = (sock) => {
 
  sock.ev.on("messages.upsert", async ({ messages }) => {
 
-  const msg = messages[0]
+  try {
 
-  if (!msg.message) return
+   const msg = messages?.[0]
 
-  messageHandler(sock, msg)
+   if (!msg) return
+
+   if (!msg.message) return
+
+   if (msg.key?.remoteJid === "status@broadcast") return
+
+   if (msg.message.protocolMessage) return
+
+   await messageHandler(sock, msg)
+
+  } catch (err) {
+
+   console.log("EventHandler error:", err)
+
+  }
 
  })
 
