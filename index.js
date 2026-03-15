@@ -41,7 +41,7 @@ async function start() {
 
    if (qr) {
 
-    qrcode.generate(qr, { small: true })
+    qrcode.generate(qr, { small: false })
 
     logger.info("QR RECEIVED - Scan to login")
 
